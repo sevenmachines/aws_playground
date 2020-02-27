@@ -1,0 +1,17 @@
+Parameters:
+  Name:
+    Type: String
+  Repository:
+    Type: String
+  RepositoryAccessToken:
+    Type: String
+    NoEcho: true
+
+Resources:
+  App:
+    Type: AWS::Amplify::App
+    Properties: 
+      Name: !Ref Name
+      AccessToken: !Ref RepositoryAccessToken
+      Repository: !Ref Repository
+
