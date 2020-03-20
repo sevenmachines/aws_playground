@@ -6,15 +6,17 @@ Description: 'CloudFormation Template to create Aurora Postgresql Cluster DB Ins
 ###############################################################################   
 
 Parameters:
-
+  UsernameSecret:
+    Description: 'The Arn of a {username: x, password: y} formatted SecretsManager secret'
+    Type: String
   VpcId:
     Type: String
     MinLength: '1'
     MaxLength: '128'
-    
-  SubnetGroupIds:
+  AccessCidr:
     Type: String
-    
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
   DBName:
     Description: Database Name
     Type: String
@@ -31,14 +33,6 @@ Parameters:
     MinValue: 1115
     MaxValue: 65535
     
-  DBUsername:
-    Description: Database master username
-    Type: String
-    MinLength: '1'
-    MaxLength: '16'
-    AllowedPattern: "^[a-zA-Z]+[0-9a-zA-Z_]*$"
-    ConstraintDescription: Must start with a letter. Only numbers, letters, and _ accepted. max length 16 characters
-     
   DBEngineVersion:
     Description: Select Database Engine Version
     Type: String
@@ -87,56 +81,6 @@ Parameters:
       - prod
     Default: dev
 
-  Application:
-    Type: String
-    Description: The Application tag is used to designate the application of the associated AWS resource. In this capacity application does not refer to an installed software component, but rather the overall business application that the resource supports.
-    AllowedPattern: "^[a-zA-Z]+[a-zA-Z ]+[a-zA-Z]+$"
-    ConstraintDescription: provide a valid application name containing only letters and spaces
-
-  ApplicationVersion:
-    Type: String
-    Description: The ApplicationVersion tag is used to designate the specific version of the application. Format should be in the Pattern - "#.#.#"
-    Default: '1.0.0'
-    AllowedPattern: '^[a-zA-Z0-9\.\-]+$'
-    ConstraintDescription: provide a valid application version
-     
-  ProjectCostCenter:
-    Type: String
-    Description: The ProjectCostCenter tag is used to designate the cost center associated with the project of the given AWS resource.
-    AllowedPattern: "^[a-zA-Z0-9]+$"
-    ConstraintDescription:  provide a valid cost center
- 
-  ServiceOwnersEmailContact:
-    Type: String
-    Description: The ServiceOwnersEmailContact tag is used to designate business owner(s) email address associated with the given AWS resource for sending outage or maintenance notifications
-    AllowedPattern: '^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$'
-    ConstraintDescription: provide a valid email address.
-    
-  NotificationList:
-    Type: String
-    Description: The Email notification list is used to configure a SNS topic for sending cloudwatch alarm and RDS Event notifications
-    AllowedPattern: '^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$'
-    ConstraintDescription: provide a valid email address.
-    
-  Confidentiality:
-    Type: String
-    Description: The Confidentiality tag is used to designate the confidentiality classification of the data that is associated with the resource.
-    AllowedValues:
-      - public
-      - private
-      - confidential
-      - pii/phi
-    
-  Compliance:
-    Type: String
-    Description: The Compliance tag is used to specify the Compliance level for the AWS resource.
-    AllowedValues:
-      - hipaa
-      - sox
-      - fips
-      - other
-      - none
-    
 ###############################################################################
 # Parameter groups
 ###############################################################################
@@ -155,27 +99,13 @@ Metadata:
         Parameters:
           - DBName
           - DBPort
-          - DBUsername
           - DBInstanceClass
           - DBEngineVersion
-          - DBSnapshotName
-          - NotificationList
       -
         Label:
           default: Networking
         Parameters:
           - VpcId
-          - SecurityGroupIds
-      -
-        Label:
-          default: Mandatory Tags
-        Parameters:
-          - Application
-          - ApplicationVersion
-          - ProjectCostCenter          
-          - ServiceOwnersEmailContact
-          - Confidentiality
-          - Compliance
           
 ###############################################################################
 # Mappings
@@ -205,8 +135,6 @@ Mappings:
 # Conditions
 ############################################################################### 
 Conditions:
-  IsUseDBSnapshot: !Not [!Equals [!Ref DBSnapshotName, ""]]
-  IsNotUseDBSnapshot: !Not [Condition: IsUseDBSnapshot]
   IsProd: !Equals [!Ref EnvironmentStage, 'prod']
   IsReplica: !Or [!Equals [!Ref EnvironmentStage, 'pre-prod'], Condition: IsProd]
   DoEnableIAM: !Not [!Equals [!Ref DBEngineVersion, '9.6.8']]
@@ -238,18 +166,11 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole
 
         
-  DBSNSTopic:
-    Type: AWS::SNS::Topic
-    Properties:
-      Subscription:
-      - Endpoint: !Ref NotificationList
-        Protocol: email
-        
   DBSubnetGroup:
     Type: 'AWS::RDS::DBSubnetGroup'
     Properties:
       DBSubnetGroupDescription: !Ref 'AWS::StackName'
-      SubnetIds: !Ref SubnetGroupIds
+      SubnetIds: !Ref SubnetIds
       
   ClusterSecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
@@ -259,7 +180,7 @@ Resources:
       - IpProtocol: tcp
         FromPort: !Ref DBPort
         ToPort: !Ref DBPort
-        SourceSecurityGroupId: !Ref SecurityGroupIds
+        CidrIp: !Ref AccessCidr
         Description: 'Access to Bastion Host Security Group'
       VpcId: !Ref VpcId
         
@@ -346,43 +267,22 @@ Resources:
     Properties:
       Engine: aurora-postgresql
       EngineVersion: !Ref DBEngineVersion
-      DatabaseName: !If [IsUseDBSnapshot, !Ref "AWS::NoValue", !Ref DBName]
+      DatabaseName: !Ref DBName
       Port: !Ref DBPort
-      MasterUsername:
-        !If [IsUseDBSnapshot, !Ref "AWS::NoValue", !Join ['', ['{{resolve:secretsmanager:', !Ref AuroraMasterSecret, ':SecretString:username}}' ]]]
-      MasterUserPassword:
-        !If [IsUseDBSnapshot, !Ref "AWS::NoValue", !Join ['', ['{{resolve:secretsmanager:', !Ref AuroraMasterSecret, ':SecretString:password}}' ]]]
+      MasterUsername: !Join ['', ['{{resolve:secretsmanager:', !Ref UsernameSecret, ':SecretString:username}}' ]]
+      MasterUserPassword: !Join ['', ['{{resolve:secretsmanager:', !Ref UsernameSecret, ':SecretString:password}}' ]]
       DBSubnetGroupName: !Ref DBSubnetGroup
       VpcSecurityGroupIds:
       - !Ref ClusterSecurityGroup  
       BackupRetentionPeriod: !If [IsProd, 35, 7]
       DBClusterParameterGroupName: !Ref RDSDBClusterParameterGroup
-      SnapshotIdentifier: !If [IsUseDBSnapshot, !Ref DBSnapshotName, !Ref "AWS::NoValue"]
-      StorageEncrypted:  !If [IsUseDBSnapshot, !Ref "AWS::NoValue", true]
-      KmsKeyId: !If [IsNotUseDBSnapshot, !Ref AuroraKMSCMK, !Ref 'AWS::NoValue']
+      StorageEncrypted:  true
+      KmsKeyId: !Ref AuroraKMSCMK
       EnableIAMDatabaseAuthentication: !If [DoEnableIAM, true, !Ref "AWS::NoValue"]
       Tags:
         -
           Key: EnvironmentStage
           Value: !Ref EnvironmentStage
-        -
-          Key: Application
-          Value: !Ref Application
-        -
-          Key: ApplicationVersion
-          Value: !Ref ApplicationVersion
-        -
-          Key: ProjectCostCenter
-          Value: !Ref ProjectCostCenter
-        -
-          Key: ServiceOwnersEmailContact
-          Value: !Ref ServiceOwnersEmailContact          
-        -
-          Key: Confidentiality
-          Value: !Ref Confidentiality
-        -
-          Key: Compliance
-          Value: !Ref Compliance
         
   AuroraDBFirstInstance:
     Type: AWS::RDS::DBInstance
@@ -407,24 +307,6 @@ Resources:
         -
           Key: EnvironmentStage
           Value: !Ref EnvironmentStage
-        -
-          Key: Application
-          Value: !Ref Application
-        -
-          Key: ApplicationVersion
-          Value: !Ref ApplicationVersion
-        -
-          Key: ProjectCostCenter
-          Value: !Ref ProjectCostCenter
-        -
-          Key: ServiceOwnersEmailContact
-          Value: !Ref ServiceOwnersEmailContact
-        -
-          Key: Confidentiality
-          Value: !Ref Confidentiality
-        -
-          Key: Compliance
-          Value: !Ref Compliance
 
   AuroraDBSecondInstance:
     Condition: IsReplica
@@ -448,186 +330,7 @@ Resources:
       EnablePerformanceInsights: true
       PerformanceInsightsKMSKeyId: !Ref AuroraKMSCMK
       PerformanceInsightsRetentionPeriod: !If [IsProd, 731, 7]
-      Tags:
-        -
-          Key: EnvironmentStage
-          Value: !Ref EnvironmentStage
-        -
-          Key: Application
-          Value: !Ref Application
-        -
-          Key: ApplicationVersion
-          Value: !Ref ApplicationVersion
-        -
-          Key: ProjectCostCenter
-          Value: !Ref ProjectCostCenter
-        -
-          Key: ServiceOwnersEmailContact
-          Value: !Ref ServiceOwnersEmailContact
-        -
-          Key: Confidentiality
-          Value: !Ref Confidentiality
-        -
-          Key: Compliance
-          Value: !Ref Compliance
           
-  CPUUtilizationAlarm1:
-    Type: "AWS::CloudWatch::Alarm"
-    Properties:
-      ActionsEnabled: true
-      AlarmActions:
-      - Ref: DBSNSTopic
-      AlarmDescription: 'CPU_Utilization'
-      Dimensions:
-      - Name: DBInstanceIdentifier
-        Value:
-          Ref: AuroraDBFirstInstance
-      MetricName: CPUUtilization
-      Statistic: Maximum
-      Namespace: 'AWS/RDS'
-      Threshold: '80'
-      Unit: Percent
-      ComparisonOperator: 'GreaterThanOrEqualToThreshold'
-      Period: '60'
-      EvaluationPeriods: '5'
-      TreatMissingData: 'notBreaching'
-      
-  CPUUtilizationAlarm2:
-    Condition: IsReplica
-    Type: "AWS::CloudWatch::Alarm"
-    Properties:
-      ActionsEnabled: true
-      AlarmActions:
-      - Ref: DBSNSTopic
-      AlarmDescription: 'CPU_Utilization'
-      Dimensions:
-      - Name: DBInstanceIdentifier
-        Value:
-          Ref: AuroraDBSecondInstance
-      MetricName: CPUUtilization
-      Statistic: Maximum
-      Namespace: 'AWS/RDS'
-      Threshold: '80'
-      Unit: Percent
-      ComparisonOperator: 'GreaterThanOrEqualToThreshold'
-      Period: '60'
-      EvaluationPeriods: '5'
-      TreatMissingData: 'notBreaching'
-      
-  MaxUsedTxIDsAlarm1:
-    Type: "AWS::CloudWatch::Alarm"
-    Properties:
-      ActionsEnabled: true
-      AlarmActions:
-      - Ref: DBSNSTopic
-      AlarmDescription: 'Maximum Used Transaction IDs'
-      Dimensions:
-      - Name: DBInstanceIdentifier
-        Value:
-          Ref: AuroraDBFirstInstance
-      MetricName: 'MaximumUsedTransactionIDs'
-      Statistic: Average
-      Namespace: 'AWS/RDS'
-      Threshold: '600000000'
-      Unit: Count
-      ComparisonOperator: 'GreaterThanOrEqualToThreshold'
-      Period: '60'
-      EvaluationPeriods: '5'
-      TreatMissingData: 'notBreaching'
-      
-  MaxUsedTxIDsAlarm2:
-    Condition: IsReplica
-    Type: "AWS::CloudWatch::Alarm"
-    Properties:
-      ActionsEnabled: true
-      AlarmActions:
-      - Ref: DBSNSTopic
-      AlarmDescription: 'Maximum Used Transaction IDs'
-      Dimensions:
-      - Name: DBInstanceIdentifier
-        Value:
-          Ref: AuroraDBSecondInstance
-      MetricName: 'MaximumUsedTransactionIDs'
-      Statistic: Average
-      Namespace: 'AWS/RDS'
-      Threshold: '600000000'
-      Unit: Count
-      ComparisonOperator: 'GreaterThanOrEqualToThreshold'
-      Period: '60'
-      EvaluationPeriods: '5'
-      TreatMissingData: 'notBreaching'
-
-  FreeLocalStorageAlarm1:
-    Type: "AWS::CloudWatch::Alarm"
-    Properties:
-      ActionsEnabled: true
-      AlarmActions:
-      - Ref: DBSNSTopic
-      AlarmDescription: 'Free Local Storage'
-      Dimensions:
-      - Name: DBInstanceIdentifier
-        Value:
-          Ref: AuroraDBFirstInstance
-      MetricName: 'FreeLocalStorage'
-      Statistic: Average
-      Namespace: 'AWS/RDS'
-      Threshold: '5368709120'
-      Unit: Bytes
-      ComparisonOperator: 'LessThanOrEqualToThreshold'
-      Period: '60'
-      EvaluationPeriods: '5'
-      TreatMissingData: 'notBreaching'
-      
-  FreeLocalStorageAlarm2:
-    Condition: IsReplica
-    Type: "AWS::CloudWatch::Alarm"
-    Properties:
-      ActionsEnabled: true
-      AlarmActions:
-      - Ref: DBSNSTopic
-      AlarmDescription: 'Free Local Storage'
-      Dimensions:
-      - Name: DBInstanceIdentifier
-        Value:
-          Ref: AuroraDBSecondInstance
-      MetricName: 'FreeLocalStorage'
-      Statistic: Average
-      Namespace: 'AWS/RDS'
-      Threshold: '5368709120'
-      Unit: Bytes
-      ComparisonOperator: 'LessThanOrEqualToThreshold'
-      Period: '60'
-      EvaluationPeriods: '5'
-      TreatMissingData: 'notBreaching'    
-      
-  DatabaseClusterEventSubscription:
-    Type: 'AWS::RDS::EventSubscription'
-    Properties:
-      EventCategories:
-      - failover
-      - failure
-      - notification
-      SnsTopicArn: !Ref DBSNSTopic
-      SourceIds: [!Ref AuroraDBCluster]
-      SourceType: 'db-cluster'
-
-  DatabaseInstanceEventSubscription:
-    Type: 'AWS::RDS::EventSubscription'
-    Properties:
-      EventCategories:
-      - availability
-      - configuration change
-      - deletion
-      - failover
-      - failure
-      - maintenance
-      - notification
-      - recovery
-      SnsTopicArn: !Ref DBSNSTopic
-      SourceIds: 
-      - !Ref AuroraDBFirstInstance
-      - !If [IsReplica, !Ref AuroraDBSecondInstance, !Ref "AWS::NoValue"]
-      SourceType: 'db-instance'
       
 ###############################################################################
 # Outputs 
@@ -642,9 +345,6 @@ Outputs:
   Port:
     Description: 'Aurora Endpoint Port'
     Value: !GetAtt 'AuroraDBCluster.Endpoint.Port'
-  DBUsername:
-    Description: 'Database master username'
-    Value: !Ref DBUsername
   DBName:
     Description: 'Database Name'
     Value: !Ref DBName
@@ -657,7 +357,7 @@ Outputs:
                - ' --port='
                - !GetAtt 'AuroraDBCluster.Endpoint.Port'
                - ' --username='
-               - !Ref DBUsername
+               - !Join ['', ['{{resolve:secretsmanager:', !Ref UsernameSecret, ':SecretString:username}}' ]]
                - ' --dbname='
                - !Ref DBName
     

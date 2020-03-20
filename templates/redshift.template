@@ -33,20 +33,20 @@ Parameters:
     Default: "false"
     Description: Indicates whether the cluster can be accessed from a public network.
     Type: String
-  QSRedshiftRoleARN:
-    Description: QSRedshiftRole ARN
-    Type: String
   RedshiftInboundCIDR:
     AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
     ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
     Description: CIDR block that gets access to Redshift
     Type: String
-  RedshiftPassword:
-    Description:
-      The password that is associated with the master user account for
-      the cluster that is being created.
-    NoEcho: "true"
+  EnvironmentStage:
     Type: String
+    Description: The environment tag is used to designate the Environment Stage of the associated AWS resource.
+    AllowedValues:
+      - dev
+      - test
+      - pre-prod
+      - prod
+    Default: dev
   RedshiftUsername:
     Description:
       The user name that is associated with the master user account for
@@ -84,6 +84,22 @@ Conditions:
     - !Ref "PubliclyAccessible"
     - "true"
 Resources:
+  DatabaseMasterSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Join ['/', [!Ref EnvironmentStage, 'redshift', !Ref 'AWS::StackName']]
+      Description: !Join ['', ['Redshift Master User Secret ', 'for CloudFormation Stack ', !Ref 'AWS::StackName']]
+      Tags:
+        - Key: EnvironmentStage
+          Value: !Ref EnvironmentStage
+        - Key: StackID
+          Value: !Ref 'AWS::StackId'
+      GenerateSecretString:
+        SecretStringTemplate: !Join ['', ['{"username": "', !Ref DBUsername, '"}']]
+        GenerateStringKey: "password"
+        ExcludeCharacters: '"@/\'
+        PasswordLength: 16
+
   RedshiftCluster:
     Properties:
       ClusterSubnetGroupName: !Ref "RedshiftClusterSubnetGroup"
@@ -92,9 +108,7 @@ Resources:
         - multi-node
         - single-node
       DBName: !Ref "DatabaseName"
-      IamRoles:
-        - !Ref "QSRedshiftRoleARN"
-      MasterUserPassword: !Ref "RedshiftPassword"
+      MasterUserPassword: !Ref DatabaseMasterSecret
       MasterUsername: !Ref "RedshiftUsername"
       NodeType: !Ref "NodeType"
       NumberOfNodes: !If

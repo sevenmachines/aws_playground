@@ -2,22 +2,25 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: Creates AWS Glue resources.  **WARNING**  You will be billed for the
   AWS resources used if you create a stack from this template.
 Resources:
-  DatalakeSubmissionsDatabase:
+  Database:
     Type: AWS::Glue::Database
     Properties:
       CatalogId: !Ref 'AWS::AccountId'
       DatabaseInput:
-        Name: datalake-submissions
-        Description: Data Lake Quick Start Submissions
-  CuratedDatasetsDatabase:
-    Type: AWS::Glue::Database
+        Name: !Ref DatabaseName
+        LocationUri: jdbc:mysql://xxx-cluster.cluster-xxx.us-east-1.rds.amazonaws.com:3306/employee
+  Connection:
+    Type: AWS::Glue::Connection
     Properties:
       CatalogId: !Ref 'AWS::AccountId'
-      DatabaseInput:
-        Name: datalake-curated-datasets
-        Description: Data Lake Quick Start Curated Datasets
+      ConnectionProperties: Json
+      ConnectionType: String
+      Description: String
+      MatchCriteria: 
+        - String
+      Name: String
+      ConnectionInput:
+      
 Outputs:
-  CuratedDatasetsDatabaseName:
+  DatabaseName:
     Value: !Ref 'CuratedDatasetsDatabase'
-  DatalakeSubmissionsDatabaseName:
-    Value: !Ref 'DatalakeSubmissionsDatabase'
