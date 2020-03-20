@@ -105,7 +105,13 @@ Resources:
 Outputs:
   PublicSubnetId:
     Value: !Ref PublicSubnet
+  PublicSubnetCidr:
+    Value: !Select [0, !Cidr [ !Ref SubnetCidr, 4, 8 ]]
   PrivateSubnetId:
     Value: !Ref PrivateSubnet
+  PrivateSubnetCidr:
+    Value: !Select [1, !Cidr [ !Ref SubnetCidr, 4, 8 ]]
   IsolatedSubnetId:
     Value: !Ref IsolatedSubnet
+  IsolatedSubnetCidr:
+    Value: !Select [2, !Cidr [ !Ref SubnetCidr, 4, 8 ]]
