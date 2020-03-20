@@ -1,0 +1,76 @@
+Parameters:
+  VpcCidr:
+    Type: String
+
+  EnablePublicBastionAccess:
+    Type: String
+    AllowedValues:  ['true', 'false']
+    Default: 'false'
+  EnablePrivateBastionAccess:
+    Type: String
+    AllowedValues:  ['true', 'false']
+    Default: 'true'
+  EnableIsolatedBastionAccess:
+    Type: String
+    AllowedValues:  ['true', 'false']
+    Default: 'false'
+
+Conditions:
+  CreatePublicBastion: !Equals [!Ref EnablePublicBastionAccess, 'true']
+  CreatePrivateBastion: !Equals [!Ref EnablePrivateBastionAccess, 'true']
+  CreateIsolatedBastion: !Equals [!Ref EnableIsolatedBastionAccess, 'true']
+
+Resources:
+  Vpc:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: './vpc.template'
+      Parameters:
+        VpcCidr: !Ref VpcCidr
+
+  AZ1Stack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: './network_az.template'
+      Parameters:
+        VpcId: !GetAtt Vpc.Outputs.VpcId
+        SubnetCidr: !Select ['0', !Cidr [!Ref VpcCidr, 4, 12]]
+        AvailabilityZone: !Select [0, !GetAZs ""]
+        InternetGatewayId: !GetAtt Vpc.Outputs.InternetGatewayId
+  AZ2Stack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: './network_az.template'
+      Parameters:
+        VpcId: !GetAtt Vpc.Outputs.VpcId
+        SubnetCidr: !Select ['1', !Cidr [!Ref VpcCidr, 4, 12]]
+        AvailabilityZone: !Select [1, !GetAZs ""]
+        InternetGatewayId: !GetAtt Vpc.Outputs.InternetGatewayId
+  PrivateBastion:
+    Condition: CreatePublicBastion
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: './bastion.template'
+      Parameters:
+        VpcId: !GetAtt Vpc.Outputs.VpcId
+        PrivateSubnet1ID: !GetAtt AZ1Stack.Outputs.PublicSubnetId
+        PrivateSubnet2ID: !GetAtt AZ2Stack.Outputs.PublicSubnetId
+  PrivateBastion:
+    Condition: CreatePrivateBastion
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: './bastion.template'
+      Parameters:
+        VpcId: !GetAtt Vpc.Outputs.VpcId
+        PrivateSubnet1ID: !GetAtt AZ1Stack.Outputs.PrivateSubnetId
+        PrivateSubnet2ID: !GetAtt AZ2Stack.Outputs.PrivateSubnetId
+  IsolatedBastion:
+    Condition: CreateIsolatedBastion
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: './bastion.template'
+      Parameters:
+        VpcId: !GetAtt Vpc.Outputs.VpcId
+        PrivateSubnet1ID: !GetAtt AZ1Stack.Outputs.IsolatedSubnetId
+        PrivateSubnet2ID: !GetAtt AZ2Stack.Outputs.IsolatedSubnetId
+    

@@ -1,0 +1,22 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters: {}
+
+Resources:
+  LakeBucket: 
+    Type: AWS::S3::Bucket
+  Lake:
+    Type: AWS::LakeFormation::DataLakeSettings
+    Properties:
+      Admins:
+        - "DataLakePrincipalIdentifier": arn:aws:iam::412406384526:role/admin 
+
+
+  LakeBucketResource:
+    Type: AWS::LakeFormation::Resource
+    Properties:
+      ResourceArn: !GetAtt LakeBucket.Arn
+      #      RoleArn:  arn:aws:iam::aws:policy/aws-service-role/AWSServiceRoleForLakeFormationDataAccess
+      UseServiceLinkedRole: true
+
+Outputs: {}

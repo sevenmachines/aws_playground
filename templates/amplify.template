@@ -12,6 +12,6 @@ Resources:
     Type: AWS::Amplify::App
     Properties: 
       Name: !Ref Name
-      AccessToken: !Ref RepositoryAccessToken
+      OAuthToken: !Ref RepositoryAccessToken
       Repository: !Ref Repository
 

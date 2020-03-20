@@ -1,0 +1,62 @@
+Parameters:
+  Principal:
+    Type: String
+    Description: The Arn of the principal to grant access to
+    Default: arn:aws:iam::412406384526:role/admin
+  DatabaseName:
+    Type: String
+    Description: Name of the lake formation database to grant access to
+    Default: test
+  EnablePermissions: 
+    Type: String
+    Description: Permissions enalbed
+    Default: true
+
+Conditions:
+  PermissionsEnabled: !Equals ['true', !Ref EnablePermissions]
+Resources:
+  Database:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Ref DatabaseName
+        Description: This is a description
+        #LocationUri: !Ref DatabaseLocation
+
+  PrincipalResourcePermission:
+    Condition: PermissionsEnabled
+    Type: AWS::LakeFormation::Permissions
+    Properties: 
+      DataLakePrincipal:
+         DataLakePrincipalIdentifier: !Ref Principal
+      Permissions: ['ALL'] 
+      Resource:
+        DatabaseResource:
+          Name: !Ref DatabaseName
+
+  GlueRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lakeformation.amazonaws.com 
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: GlueAccessRole
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "glue:*Database*"
+                  - "glue:*Table*"
+                  - "glue:*Partition*"
+                Resource: '*' 
+
+
+
