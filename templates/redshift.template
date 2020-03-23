@@ -4,6 +4,9 @@ Description:
   an Amazon Redshift cluster of the size and instance type that you specify. You will
   be billed for the AWS resources used if you create a stack from this template. (qs-1nlkhq1p3)
 Parameters:
+  UsernameSecret:
+    Description: 'The Arn of a {username: x, password: y} formatted SecretsManager secret'
+    Type: String
   DatabaseName:
     Description: Redshift database name
     Type: String
@@ -38,26 +41,8 @@ Parameters:
     ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/16-28
     Description: CIDR block that gets access to Redshift
     Type: String
-  EnvironmentStage:
-    Type: String
-    Description: The environment tag is used to designate the Environment Stage of the associated AWS resource.
-    AllowedValues:
-      - dev
-      - test
-      - pre-prod
-      - prod
-    Default: dev
-  RedshiftUsername:
-    Description:
-      The user name that is associated with the master user account for
-      the cluster that is being created
-    Type: String
-  SubnetId1:
-    Description: Redshift subnet id 1.
-    Type: AWS::EC2::Subnet::Id
-  SubnetId2:
-    Description: Redshift subnet id 2.
-    Type: AWS::EC2::Subnet::Id
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
   VpcId:
     Description: VPC id.
     Type: AWS::EC2::VPC::Id
@@ -84,22 +69,6 @@ Conditions:
     - !Ref "PubliclyAccessible"
     - "true"
 Resources:
-  DatabaseMasterSecret:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Name: !Join ['/', [!Ref EnvironmentStage, 'redshift', !Ref 'AWS::StackName']]
-      Description: !Join ['', ['Redshift Master User Secret ', 'for CloudFormation Stack ', !Ref 'AWS::StackName']]
-      Tags:
-        - Key: EnvironmentStage
-          Value: !Ref EnvironmentStage
-        - Key: StackID
-          Value: !Ref 'AWS::StackId'
-      GenerateSecretString:
-        SecretStringTemplate: !Join ['', ['{"username": "', !Ref DBUsername, '"}']]
-        GenerateStringKey: "password"
-        ExcludeCharacters: '"@/\'
-        PasswordLength: 16
-
   RedshiftCluster:
     Properties:
       ClusterSubnetGroupName: !Ref "RedshiftClusterSubnetGroup"
@@ -108,8 +77,8 @@ Resources:
         - multi-node
         - single-node
       DBName: !Ref "DatabaseName"
-      MasterUserPassword: !Ref DatabaseMasterSecret
-      MasterUsername: !Ref "RedshiftUsername"
+      MasterUsername: !Join ['', ['{{resolve:secretsmanager:', !Ref UsernameSecret, ':SecretString:username}}' ]]
+      MasterUserPassword: !Join ['', ['{{resolve:secretsmanager:', !Ref UsernameSecret, ':SecretString:password}}' ]]
       NodeType: !Ref "NodeType"
       NumberOfNodes: !If
         - IsMultiNodeCluster
@@ -119,16 +88,14 @@ Resources:
       PubliclyAccessible: !If
         - IsPublic
         - true
-        - !Ref "AWS::NoValue"
+        - false
       VpcSecurityGroupIds:
         - !Ref "RedshiftSecurityGroup"
     Type: AWS::Redshift::Cluster
   RedshiftClusterSubnetGroup:
     Properties:
       Description: Cluster subnet group
-      SubnetIds:
-        - !Ref "SubnetId1"
-        - !Ref "SubnetId2"
+      SubnetIds: !Ref SubnetIds
     Type: AWS::Redshift::ClusterSubnetGroup
   RedshiftSecurityGroup:
     Properties:

@@ -28,7 +28,7 @@ Parameters:
   DBPort:
     Description: TCP/IP Port for the Database Instance
     Type: Number
-    Default: 5432
+    Default: 3306
     ConstraintDescription: 'Must be in the range [1115-65535]'
     MinValue: 1115
     MaxValue: 65535
@@ -331,7 +331,13 @@ Resources:
       PerformanceInsightsKMSKeyId: !Ref AuroraKMSCMK
       PerformanceInsightsRetentionPeriod: !If [IsProd, 731, 7]
           
-      
+  SecretRDSInstanceAttachment:
+    Type: "AWS::SecretsManager::SecretTargetAttachment"
+    Properties:
+      SecretId: !Ref UsernameSecret
+      TargetId: !Ref AuroraDBCluster
+      TargetType: AWS::RDS::DBCluster
+
 ###############################################################################
 # Outputs 
 ###############################################################################   

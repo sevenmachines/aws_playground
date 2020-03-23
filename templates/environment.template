@@ -101,6 +101,7 @@ Resources:
       Parameters:
         Username: !Ref RedshiftUsername
         SecretName: '/databases/redshift/admin'
+
   RedshiftStack:
     Condition: CreateRedshift
     Type: AWS::CloudFormation::Stack
@@ -108,9 +109,14 @@ Resources:
       TemplateURL: './redshift.template'
       Parameters:
         VpcId: !GetAtt Vpc.Outputs.VpcId
-        SubnetIds: !Join [',', [!GetAtt AZ1Stack.Outputs.IsolatedSubnetId, !GetAtt AZ2Stack.Outputs.IsolatedSubnetId]]
+        SubnetIds: !Join
+          - ','
+          - - !GetAtt AZ1Stack.Outputs.IsolatedSubnetId
+            - !GetAtt AZ1Stack.Outputs.PrivateSubnetId
+            - !GetAtt AZ2Stack.Outputs.IsolatedSubnetId
+            - !GetAtt AZ2Stack.Outputs.PrivateSubnetId
         DatabaseName: !Ref RedshiftDatabaseName
-        UsernameSecret: !GetAtt AuroraSecrets.Outputs.Arn
+        UsernameSecret: !GetAtt RedshiftSecrets.Outputs.Arn
         NumberOfNodes: 1
         PubliclyAccessible: 'false'
         RedshiftInboundCIDR: !Ref VpcCidr
@@ -133,6 +139,11 @@ Resources:
         DBName: !Ref AuroraDatabaseName
         UsernameSecret: !GetAtt AuroraSecrets.Outputs.Arn
         VpcId: !GetAtt Vpc.Outputs.VpcId
-        SubnetIds: !Join [',', [!GetAtt AZ1Stack.Outputs.IsolatedSubnetId, !GetAtt AZ2Stack.Outputs.IsolatedSubnetId]]
+        SubnetIds: !Join
+          - ','
+          - - !GetAtt AZ1Stack.Outputs.IsolatedSubnetId
+            - !GetAtt AZ1Stack.Outputs.PrivateSubnetId
+            - !GetAtt AZ2Stack.Outputs.IsolatedSubnetId
+            - !GetAtt AZ2Stack.Outputs.PrivateSubnetId
         AccessCidr: !Ref VpcCidr
         DBPort: 5432
