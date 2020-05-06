@@ -1,0 +1,39 @@
+Parameters:
+  Edition:
+    Type: String
+    AllowedValues: [Enterprise, Standard]
+    Default: Standard
+  EnableSSO:
+    Type: String
+    AllowedValues: [true, false]
+    Default: false
+  FQDN:
+    Type: String
+    Description: The FQDN of the directory
+    Default: corp.example.internal
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+
+Resources:
+  ADSecret:
+    Type: AWS::CloudFormation::Stack
+    Properties: 
+      TemplateURL: ./secret_pair.template
+      Parameters: 
+        SecretName: '/credentials/microsoft/ad/admin'
+        Username: 'Admin'
+    
+  AD:
+    Type: AWS::DirectoryService::MicrosoftAD
+    Properties: 
+      CreateAlias: false
+      Edition: !Ref Edition
+      EnableSso: !Ref EnableSSO
+      Name: !Ref FQDN
+      Password: !Join ['', ['{{resolve:secretsmanager:', !GetAtt ADSecret.Outputs.Arn, ':SecretString:password}}' ]]
+      ShortName: String
+      VpcSettings: 
+        VpcId: !Ref VpcId
+        SubnetIds: !Ref SubnetIds

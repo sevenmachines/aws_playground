@@ -1,0 +1,22 @@
+
+
+Parameters:
+  VpcId:
+    Type: String
+  TransitGatewayId:
+    Type: String
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+
+Conditions:
+  CreateTransitGatewayAttachment: !Not [!Equals [!Ref TransitGatewayId, ""]]
+ 
+Resources:
+  TransitGatewayAttachment: 
+    Condition: CreateTransitGatewayAttachment
+    Type: AWS::EC2::TransitGatewayAttachment
+    Properties: 
+      SubnetIds: !Ref SubnetIds
+      TransitGatewayId: !Ref TransitGatewayId
+      VpcId: !Ref VpcId  
+      

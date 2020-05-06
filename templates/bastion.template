@@ -8,8 +8,7 @@ Metadata:
           default: Network configuration
         Parameters:
           - VpcId
-          - PrivateSubnet1ID
-          - PrivateSubnet2ID
+          - SubnetIds
       - Label:
           default: Amazon EC2 configuration
         Parameters:
@@ -68,10 +67,8 @@ Metadata:
         default: Number of bastion hosts
       OSImageOverride:
         default: Operating system override
-      PrivateSubnet1ID:
-        default: Public subnet 1 ID
-      PrivateSubnet2ID:
-        default: Public subnet 2 ID
+      SubnetIds:
+        default: Subnet ids
       QSS3BucketName:
         default: Quick Start S3 bucket name
       QSS3KeyPrefix:
@@ -156,14 +153,10 @@ Parameters:
     Default: '1'
     Description: The number of bastion hosts to create. The maximum number is four.
     Type: String
-  PrivateSubnet1ID:
-    Description: ID of the public subnet 1 that you want to provision the first bastion
+  SubnetIds:
+    Description: IDs of the subnets to provision bastions in
       into (e.g., subnet-a0246dcd).
-    Type: 'AWS::EC2::Subnet::Id'
-  PrivateSubnet2ID:
-    Description: ID of the public subnet 2 that you want to provision the second bastion into
-      (e.g., subnet-e3246d8e).
-    Type: 'AWS::EC2::Subnet::Id'
+    Type: List<AWS::EC2::Subnet::Id>
   QSS3BucketName:
     AllowedPattern: '^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$'
     ConstraintDescription: Quick Start bucket name can include numbers, lowercase letters, uppercase
@@ -205,12 +198,22 @@ Parameters:
     Description: A comma-separated list of environment variables for use in
       bootstrapping. Variables must be in the format KEY=VALUE. VALUE cannot
       contain commas.
-    Type: String
     Default: ''
+    Type: CommaDelimitedList
   RootVolumeSize:
     Description: The size in GB for the root EBS volume.
     Type: Number
     Default: '10'
+  EnablePublicAccess:
+    Description: Allow public access to the bastion
+    AllowedValues: [true, false]
+    Default: false
+    Type: String
+  EnableFullAccessFromCidr:
+    Description: Cidr to give full access to the bastion from
+    Default: ''
+    Type: String
+
 Rules:
   SubnetsInVPC:
     Assertions:
@@ -291,6 +294,9 @@ Conditions:
   UsingDefaultBucket: !Equals
     - !Ref QSS3BucketName
     - 'aws-quickstart'
+  IsPublicAccessEnabled: !Equals [!Ref EnablePublicAccess, true]
+  IsFullAccessEnabled: !Not [!Equals [!Ref EnableFullAccessFromCidr, '']]
+  
 Resources:
   BastionMainLogGroup:
     Type: 'AWS::Logs::LogGroup'
@@ -368,9 +374,7 @@ Resources:
     Type: 'AWS::AutoScaling::AutoScalingGroup'
     Properties:
       LaunchConfigurationName: !Ref BastionLaunchConfiguration
-      VPCZoneIdentifier:
-        - !Ref PrivateSubnet1ID
-        - !Ref PrivateSubnet2ID
+      VPCZoneIdentifier: !Ref SubnetIds
       MinSize: !Ref NumBastionHosts
       MaxSize: !Ref NumBastionHosts
       Cooldown: '300'
@@ -391,7 +395,7 @@ Resources:
   BastionLaunchConfiguration:
     Type: 'AWS::AutoScaling::LaunchConfiguration'
     Properties:
-      AssociatePublicIpAddress: false
+      AssociatePublicIpAddress: !If [IsPublicAccessEnabled, true, false]
       PlacementTenancy: default
       IamInstanceProfile: !Ref BastionHostProfile
       ImageId: !If
@@ -417,12 +421,20 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash -xe
+          yum update -y
+          yum install -y socat postgresql mariadb
           /opt/aws/bin/cfn-signal -e 0 --stack ${AWS::StackId} --resource  BastionAutoScalingGroup --region ${AWS::Region} 
   BastionSecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
     Properties:
       GroupDescription: Enables SSH Access to Bastion Hosts
       VpcId: !Ref VpcId
+      SecurityGroupIngress: !If
+        - IsFullAccessEnabled
+        - - CidrIp: !Ref EnableFullAccessFromCidr
+            Description: String
+            IpProtocol: -1
+        - !Ref AWS::NoValue
       
 Outputs:
   BastionAutoScalingGroup:

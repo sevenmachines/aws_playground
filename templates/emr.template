@@ -1,0 +1,82 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  Name:
+    Type: String
+  SubnetId:
+    Type: String
+  MasterInstanceType:
+    Type: String
+    default: m1.medium
+  CoreInstanceType:
+    Type: String
+    default: m1.medium
+  ReleaseLabel:
+    Type: String
+    Default: emr-5.29.0
+  TerminationProtected:
+    Type: String
+    Default: false
+  ElasticMapReducePrincipal:
+    Type: String
+  Ec2Principal:
+    Type: String
+
+Resources:
+  cluster:
+    Type: AWS::EMR::Cluster
+    Properties:
+      Name: !Ref Name
+      JobFlowRole: !Ref EMREC2InstanceProfile
+      ServiceRole: !Ref EMRRole
+      ReleaseLabel: !Ref ReleaseLabel
+      VisibleToAllUsers: true
+      Instances:
+        MasterInstanceGroup:
+          InstanceCount: 1
+          InstanceType: !Ref MasterInstanceType
+          Market: ON_DEMAND
+          Name: !Join ['', [!Ref Name, Master]]
+        CoreInstanceGroup:
+          InstanceCount: 1
+          InstanceType: !Ref CoreInstanceType
+          Market: ON_DEMAND
+          Name: !Join ['', [!Ref Name, Core]]
+        TerminationProtected: !Ref TerminationProtected
+        Ec2SubnetId: !Ref SubnetId
+      
+  EMRRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2008-10-17
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service: !Ref ElasticMapReducePrincipal
+            Action: 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonElasticMapReduceRole'
+
+  EMREC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2008-10-17
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service: !Ref Ec2Principal
+            Action: 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonElasticMapReduceforEC2Role'
+
+  EMREC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref EMREC2Role

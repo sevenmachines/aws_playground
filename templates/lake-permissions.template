@@ -1,0 +1,129 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters: {}
+Resources:
+
+Resources:
+
+  #LakeFormationPermissions:
+  #  Type: AWS::LakeFormation::Permissions
+  #  Properties:
+  #    Resource:
+  #      DatabaseResource: 
+  #        Name: test
+  #    DataLakePrincipal: 
+  #      DataLakePrincipalIdentifier: !Sub 'arn:aws:iam::${AWS::AccountId}:user/creechn'
+    
+  DataLakeS3Store:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+  
+  LakeFormationResource:
+    Type: AWS::LakeFormation::Resource
+    Properties: 
+      ResourceArn: !GetAtt DataLakeS3Store.Arn
+      UseServiceLinkedRole: true
+  
+  #LakeFormationSettings:
+  #  Type: AWS::LakeFormation::DataLakeSettings
+  #  Properties: 
+  #    Admins: 
+  #      - DataLakePrincipalIdentifier: !Sub 'arn:aws:iam::${AWS::AccountId}:user/creechn'
+    
+
+  # Data lake administrator
+  # ----------------------
+  # User who can register Amazon S3 locations, access the Data Catalog,
+  # create databases, create and run workflows, grant Lake Formation permissions to other users,
+  # and view AWS CloudTrail logs.
+  # Has fewer IAM permissions than the IAM administrator, but enough to administer the data lake. Cannot add other data lake administrators.
+  
+  DataLakeAdministratorGroup:
+    Type: AWS::IAM::Group
+    Properties: 
+      GroupName: DataLakeAdministratorGroup
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSLakeFormationDataAdmin
+        - arn:aws:iam::aws:policy/AWSGlueConsoleFullAccess
+        - arn:aws:iam::aws:policy/CloudWatchLogsReadOnlyAccess
+        - arn:aws:iam::aws:policy/AmazonAthenaFullAccess
+
+  DataLakeAdministratorPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      Groups: 
+        - !Ref DataLakeAdministratorGroup
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'iam:CreateServiceLinkedRole'
+            Resource: '*'
+            Condition: {"StringEquals": {"iam:AWSServiceName": "lakeformation.amazonaws.com"}}
+          - Effect: Allow
+            Action:
+              - 'iam:PutRolePolicy'
+            Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/lakeformation.amazonaws.com/AWSServiceRoleForLakeFormationDataAccess'
+      PolicyName: LakeFormationWorkflowPassRolePolicy
+  
+  
+  LakeFormationWorkflowPassRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      Groups: 
+        - !Ref DataLakeAdministratorGroup
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'lakeformation:GetDataAccess'
+              - 'lakeformation:GrantPermissions'
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - 'iam:PassRole'
+            Resource: !Sub 'arn:aws:iam::${AWS::AccountId }:role/${LakeFormationWorkflowRole}'
+      PolicyName: LakeFormationWorkflowPassRolePolicy
+  
+  # Workflow Role
+  # -------------
+  # Role that runs a workflow on behalf of a user.
+  # You specify this role when you create a workflow from a blueprint.
+  LakeFormationWorkflowRole:
+    Type: AWS::IAM::Role
+    Description: Lakeformation role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - glue.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+
+# Data engineer (Optional)
+# ------------------------
+# User who can create and run crawlers and workflows and grant Lake Formation
+# permissions on the Data Catalog tables that the crawlers and workflows create.
+
+# Data analyst	(Optional)
+# ------------------------
+#
+# User who can run queries against the data lake using, for example, Amazon Athena.
+# Has only enough permissions to run queries.
+
+Outputs:
+  LakeFormationWorkflowRole:
+    Value: !Ref LakeFormationWorkflowRole
+  DataLakeAdministratorGroup:
+    Value: !Ref DataLakeAdministratorGroup

@@ -1,0 +1,102 @@
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: The ID of the VPC
+    
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subnets that can access the endpoint
+   
+  SecurityGroupIds:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+    Description: Security groups that can access the endpoint
+
+  RouteTableIds:
+    Description: The route tables to update
+    Type: CommaDelimitedList
+
+  EnableSSMEndpoints:
+    Type: String
+    Description: Enable a private vpc endpoint for systems manager
+    AllowedValues: [true, false]
+    Default: false
+  EnableEC2Endpoints:
+    Type: String
+    Description: Enable a private vpc endpoint for systems manager
+    AllowedValues: [true, false]
+    Default: false
+  EnableS3Endpoints:
+    Type: String
+    Description: Enable a private vpc endpoint for systems manager
+    AllowedValues: [true, false]
+    Default: false
+ 
+Conditions:
+  SSMEndpointsEnabled: !Equals [!Ref EnableSSMEndpoints, true]
+  EC2EndpointsEnabled: !Equals [!Ref EnableEC2Endpoints, true]
+  S3EndpointsEnabled: !Equals [!Ref EnableS3Endpoints, true]
+  CreateSSMEndpoints: !Condition SSMEndpointsEnabled
+  CreateEC2Endpoints: !Or [!Condition EC2EndpointsEnabled, !Condition CreateSSMEndpoints]
+  CreateS3Endpoints: !Or [!Condition S3EndpointsEnabled, !Condition CreateSSMEndpoints]
+
+Resources:
+#PolicyDocument: '{
+#     "Statement":[{
+#     "Version":"2012-10-17",
+#       "Effect":"Allow",
+#       "Principal": "*",
+#       "Action":["s3:GetObject"],
+#       "Resource":["arn:aws:s3:::examplebucket/*"]
+#     }]
+#  }'
+ 
+  S3PrivateEndpoint:
+    Condition: CreateS3Endpoints
+    Type: AWS::EC2::VPCEndpoint
+    Properties: 
+      PrivateDnsEnabled: true
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      VpcId: !Ref VpcId
+
+  SystemsManagerPrivateEndpoint:
+    Condition: CreateSSMEndpoints
+    Type: AWS::EC2::VPCEndpoint
+    Properties: 
+      PrivateDnsEnabled: true
+      SecurityGroupIds: !Ref SecurityGroupIds
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssm
+      SubnetIds: !Ref SubnetIds
+      VpcEndpointType: Interface
+      VpcId: !Ref VpcId
+  SystemsManagerMessagesPrivateEndpoint:
+    Condition: CreateSSMEndpoints
+    Type: AWS::EC2::VPCEndpoint
+    Properties: 
+      PrivateDnsEnabled: true
+      SecurityGroupIds: !Ref SecurityGroupIds
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssmmessages
+      SubnetIds: !Ref SubnetIds
+      VpcEndpointType: Interface
+      VpcId: !Ref VpcId
+  EC2PrivateEndpoint:
+    Condition: CreateEC2Endpoints
+    Type: AWS::EC2::VPCEndpoint
+    Properties: 
+      PrivateDnsEnabled: true
+      SecurityGroupIds: !Ref SecurityGroupIds
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ec2
+      SubnetIds: !Ref SubnetIds
+      VpcEndpointType: Interface
+      VpcId: !Ref VpcId
+  EC2MessagesPrivateEndpoint:
+    Condition: CreateEC2Endpoints
+    Type: AWS::EC2::VPCEndpoint
+    Properties: 
+      PrivateDnsEnabled: true
+      SecurityGroupIds: !Ref SecurityGroupIds
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ec2messages
+      SubnetIds: !Ref SubnetIds
+      VpcEndpointType: Interface
+      VpcId: !Ref VpcId
+      

@@ -1,0 +1,16 @@
+
+Resources:
+  TransitGateway:
+      Type: "AWS::EC2::TransitGateway"
+      Properties:
+        AmazonSideAsn: 65000
+        Description: "TGW Route Integration Test"
+        AutoAcceptSharedAttachments: disable
+        DefaultRouteTableAssociation: enable
+        DefaultRouteTablePropagation: enable
+        DnsSupport: enable
+        VpnEcmpSupport: enable
+
+Outputs:
+  TransitGatewayId:
+    Value: !Ref TransitGateway

@@ -5,6 +5,15 @@ Parameters:
     Type: String
     AllowedValues:  ['true', 'false']
     Default: 'true'
+  EnablePublicBastion:
+    Type: String
+    Default: false
+  EnableBastionFullAccessFromCidr:
+    Type: String
+    Default: ''
+  TransitGatewayId:
+    Type: String
+    Default: ''
   EnableAurora:
     Type: String
     AllowedValues:  ['true', 'false']
@@ -18,6 +27,10 @@ Parameters:
     Type: String
     AllowedValues:  ['true', 'false']
     Default: 'false'
+  EnableNetworking:
+    Type: String
+    AllowedValues:  [true, false]
+    Default: false
   RedshiftDatabaseName:
     Type: String
   RedshiftUsername:
@@ -26,8 +39,10 @@ Parameters:
 
 Conditions:
   CreateBastion: !Equals [!Ref EnableBastionAccess, 'true']
+  CreateNetworking: !Equals [!Ref EnableNetworking, 'true']
   CreateAurora: !Equals [!Ref EnableAurora, 'true']
   CreateRedshift: !Equals [!Ref EnableRedshift, 'true']
+  IsBastionPublic: !Equals [!Ref EnablePublicBastion, true]
 
 Resources:
   Vpc:
@@ -35,37 +50,56 @@ Resources:
     Properties:
       TemplateURL: './vpc.template'
       Parameters:
-        VpcCidr: !Ref VpcCidr
+        VPCCIDR: !Ref VpcCidr
+        NumberOfAZs: 3
+        AvailabilityZones: !Join
+          - ','
+          - - !Select [0, !GetAZs ""]
+            - !Select [1, !GetAZs ""]
+            - !Select [2, !GetAZs ""]
+        CreatePrivateSubnets: true
+        CreateAdditionalPrivateSubnets: false
+        
+        PublicSubnet1CIDR: !Select [0, !Cidr [!Ref VpcCidr, 12, 8]]
+        PublicSubnet2CIDR: !Select [1, !Cidr [!Ref VpcCidr, 12, 8]]
+        PublicSubnet3CIDR: !Select [2, !Cidr [!Ref VpcCidr, 12, 8]]
+        PublicSubnet4CIDR: !Select [3, !Cidr [!Ref VpcCidr, 12, 8]]
+        PrivateSubnet1ACIDR: !Select [4, !Cidr [!Ref VpcCidr, 12, 8]]
+        PrivateSubnet2ACIDR: !Select [5, !Cidr [!Ref VpcCidr, 12, 8]]
+        PrivateSubnet3ACIDR: !Select [6, !Cidr [!Ref VpcCidr, 12, 8]]
+        PrivateSubnet4ACIDR: !Select [7, !Cidr [!Ref VpcCidr, 12, 8]]
+        PrivateSubnet1BCIDR: !Select [8, !Cidr [!Ref VpcCidr, 12, 8]]
+        PrivateSubnet2BCIDR: !Select [9, !Cidr [!Ref VpcCidr, 12, 8]]
+        PrivateSubnet3BCIDR: !Select [10, !Cidr [!Ref VpcCidr, 12, 8]]
+        PrivateSubnet4BCIDR: !Select [11, !Cidr [!Ref VpcCidr, 12, 8]]
 
-  AZ1Stack:
+  NetworkStack:
+    Condition: CreateNetworking
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: './network_az.template'
+      TemplateURL: './network.template'
       Parameters:
-        VpcId: !GetAtt Vpc.Outputs.VpcId
-        SubnetCidr: !Select ['0', !Cidr [!Ref VpcCidr, 4, 12]]
-        AvailabilityZone: !Select [0, !GetAZs ""]
-        InternetGatewayId: !GetAtt Vpc.Outputs.InternetGatewayId
-  
-  AZ2Stack:
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      TemplateURL: './network_az.template'
-      Parameters:
-        VpcId: !GetAtt Vpc.Outputs.VpcId
-        SubnetCidr: !Select ['1', !Cidr [!Ref VpcCidr, 4, 12]]
-        AvailabilityZone: !Select [1, !GetAZs ""]
-        InternetGatewayId: !GetAtt Vpc.Outputs.InternetGatewayId
-  
+        VpcId: !GetAtt Vpc.Outputs.VPCID
+        TransitGatewayId: !Ref TransitGatewayId
+        SubnetIds: !Join
+          - ','
+          - - !GetAtt Vpc.Outputs.PublicSubnet1ID
+            - !GetAtt Vpc.Outputs.PublicSubnet2ID
+            - !GetAtt Vpc.Outputs.PublicSubnet3ID
+ 
   PrivateBastion:
-    Condition: CreatePrivateBastion
+    Condition: CreateBastion
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: './bastion.template'
       Parameters:
-        VpcId: !GetAtt Vpc.Outputs.VpcId
-        PrivateSubnet1ID: !GetAtt AZ1Stack.Outputs.PrivateSubnetId
-        PrivateSubnet2ID: !GetAtt AZ2Stack.Outputs.PrivateSubnetId
+        VpcId: !GetAtt Vpc.Outputs.VPCID
+        SubnetIds: !If
+          - IsBastionPublic
+          - !Join [',', [!GetAtt Vpc.Outputs.PublicSubnet1ID, !GetAtt Vpc.Outputs.PublicSubnet2ID, !GetAtt Vpc.Outputs.PublicSubnet3ID]]
+          - !Join [',', [!GetAtt Vpc.Outputs.PrivateSubnet1AID, !GetAtt Vpc.Outputs.PrivateSubnet2AID, !GetAtt Vpc.Outputs.PrivateSubnet3AID]]
+        EnablePublicAccess: !Ref EnablePublicBastion
+        EnableFullAccessFromCidr: !Ref EnableBastionFullAccessFromCidr
         
   RedshiftSecrets:
     Condition: CreateRedshift
@@ -82,13 +116,8 @@ Resources:
     Properties:
       TemplateURL: './redshift.template'
       Parameters:
-        VpcId: !GetAtt Vpc.Outputs.VpcId
-        SubnetIds: !Join
-          - ','
-          - - !GetAtt AZ1Stack.Outputs.IsolatedSubnetId
-            - !GetAtt AZ1Stack.Outputs.PrivateSubnetId
-            - !GetAtt AZ2Stack.Outputs.IsolatedSubnetId
-            - !GetAtt AZ2Stack.Outputs.PrivateSubnetId
+        VpcId: !GetAtt Vpc.Outputs.VPCID
+        SubnetIds: !GetAtt Vpc.Outputs.PrivateSubnetIds
         DatabaseName: !Ref RedshiftDatabaseName
         UsernameSecret: !GetAtt RedshiftSecrets.Outputs.Arn
         NumberOfNodes: 1
@@ -112,12 +141,19 @@ Resources:
       Parameters:
         DBName: !Ref AuroraDatabaseName
         UsernameSecret: !GetAtt AuroraSecrets.Outputs.Arn
-        VpcId: !GetAtt Vpc.Outputs.VpcId
+        VpcId: !GetAtt Vpc.Outputs.VPCID
         SubnetIds: !Join
           - ','
-          - - !GetAtt AZ1Stack.Outputs.IsolatedSubnetId
-            - !GetAtt AZ1Stack.Outputs.PrivateSubnetId
-            - !GetAtt AZ2Stack.Outputs.IsolatedSubnetId
-            - !GetAtt AZ2Stack.Outputs.PrivateSubnetId
+          - - !GetAtt Vpc.Outputs.PrivateSubnet2AID
+            - !GetAtt Vpc.Outputs.PrivateSubnet2BID
+            - !GetAtt Vpc.Outputs.PrivateSubnet2CID
         AccessCidr: !Ref VpcCidr
         DBPort: 5432
+
+Outputs:
+  VpcId:
+    Value: !Ref Vpc
+  BastionAutoScalingGroup:
+    Value: GetAtt PrivateBastion.Outputs.BastionAutoScalingGroup
+    Description: |
+      'aws autoscaling describe-auto-scaling-groups --query 'AutoScalingGroups[].Instances[].{InstanceId: InstanceId, LaunchConfigurationName: LaunchConfigurationName}'
