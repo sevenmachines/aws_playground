@@ -1,0 +1,54 @@
+AWSTemplateFormatVersion: 2010-09-09
+Resources:
+  DMSAccountRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: dms-vpc-role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - dms.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonDMSVPCManagementRole'
+      Path: /
+  DMSAccessRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [dms.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Policies:
+        - PolicyName: S3SourceAccessForDMSPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                Resource: ["arn:aws:s3:::*/*"]
+              - Effect: Allow
+                Action: 's3:ListBucket'
+                Resource: ["arn:aws:s3:::*"]
+        - PolicyName: S3TargetAccessForDMSPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:PutObject'
+                  - 's3:DeleteObject'
+                Resource: ["arn:aws:s3:::*/*"]
+              - Effect: Allow
+                Action: 's3:ListBucket'
+                Resource: ["arn:aws:s3:::*"]
+  

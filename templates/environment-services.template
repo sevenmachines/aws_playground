@@ -1,4 +1,10 @@
 Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PublicSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
   VpcCidr:
     Type: String
   EnableBastionAccess:
@@ -23,6 +29,15 @@ Parameters:
   AuroraUsername:
     NoEcho: true
     Type: String
+  EnableLegacyDatabase:
+    Type: String
+    AllowedValues:  ['true', 'false']
+    Default: 'false'
+  LegacyDatabaseName:
+    Type: String
+  LegacyDatabaseUsername:
+    NoEcho: true
+    Type: String
   EnableRedshift:
     Type: String
     AllowedValues:  ['true', 'false']
@@ -36,42 +51,21 @@ Parameters:
   RedshiftUsername:
     NoEcho: true
     Type: String
+  EnableDMS:
+    Type: String
+    AllowedValues:  ['true', 'false']
+    Default: 'false'
 
 Conditions:
   CreateBastion: !Equals [!Ref EnableBastionAccess, 'true']
   CreateNetworking: !Equals [!Ref EnableNetworking, 'true']
   CreateAurora: !Equals [!Ref EnableAurora, 'true']
+  CreateLegacyDatabase: !Equals [!Ref EnableLegacyDatabase, 'true']
+  CreateDMS: !Equals [!Ref EnableDMS, 'true']
   CreateRedshift: !Equals [!Ref EnableRedshift, 'true']
   IsBastionPublic: !Equals [!Ref EnablePublicBastion, true]
 
 Resources:
-  Vpc:
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      TemplateURL: './vpc.template'
-      Parameters:
-        VPCCIDR: !Ref VpcCidr
-        NumberOfAZs: 3
-        AvailabilityZones: !Join
-          - ','
-          - - !Select [0, !GetAZs ""]
-            - !Select [1, !GetAZs ""]
-            - !Select [2, !GetAZs ""]
-        CreatePrivateSubnets: true
-        CreateAdditionalPrivateSubnets: false
-        
-        PublicSubnet1CIDR: !Select [0, !Cidr [!Ref VpcCidr, 12, 8]]
-        PublicSubnet2CIDR: !Select [1, !Cidr [!Ref VpcCidr, 12, 8]]
-        PublicSubnet3CIDR: !Select [2, !Cidr [!Ref VpcCidr, 12, 8]]
-        PublicSubnet4CIDR: !Select [3, !Cidr [!Ref VpcCidr, 12, 8]]
-        PrivateSubnet1ACIDR: !Select [4, !Cidr [!Ref VpcCidr, 12, 8]]
-        PrivateSubnet2ACIDR: !Select [5, !Cidr [!Ref VpcCidr, 12, 8]]
-        PrivateSubnet3ACIDR: !Select [6, !Cidr [!Ref VpcCidr, 12, 8]]
-        PrivateSubnet4ACIDR: !Select [7, !Cidr [!Ref VpcCidr, 12, 8]]
-        PrivateSubnet1BCIDR: !Select [8, !Cidr [!Ref VpcCidr, 12, 8]]
-        PrivateSubnet2BCIDR: !Select [9, !Cidr [!Ref VpcCidr, 12, 8]]
-        PrivateSubnet3BCIDR: !Select [10, !Cidr [!Ref VpcCidr, 12, 8]]
-        PrivateSubnet4BCIDR: !Select [11, !Cidr [!Ref VpcCidr, 12, 8]]
 
   NetworkStack:
     Condition: CreateNetworking
@@ -79,13 +73,9 @@ Resources:
     Properties:
       TemplateURL: './network.template'
       Parameters:
-        VpcId: !GetAtt Vpc.Outputs.VPCID
+        VpcId: !Ref VpcId
         TransitGatewayId: !Ref TransitGatewayId
-        SubnetIds: !Join
-          - ','
-          - - !GetAtt Vpc.Outputs.PublicSubnet1ID
-            - !GetAtt Vpc.Outputs.PublicSubnet2ID
-            - !GetAtt Vpc.Outputs.PublicSubnet3ID
+        SubnetIds: !Ref PublicSubnetIds
  
   PrivateBastion:
     Condition: CreateBastion
@@ -93,11 +83,11 @@ Resources:
     Properties:
       TemplateURL: './bastion.template'
       Parameters:
-        VpcId: !GetAtt Vpc.Outputs.VPCID
+        VpcId: !Ref VpcId
         SubnetIds: !If
           - IsBastionPublic
-          - !Join [',', [!GetAtt Vpc.Outputs.PublicSubnet1ID, !GetAtt Vpc.Outputs.PublicSubnet2ID, !GetAtt Vpc.Outputs.PublicSubnet3ID]]
-          - !Join [',', [!GetAtt Vpc.Outputs.PrivateSubnet1AID, !GetAtt Vpc.Outputs.PrivateSubnet2AID, !GetAtt Vpc.Outputs.PrivateSubnet3AID]]
+          - !Join [',', !Ref PublicSubnetIds]
+          - !Join [',', !Ref PrivateSubnetIds]
         EnablePublicAccess: !Ref EnablePublicBastion
         EnableFullAccessFromCidr: !Ref EnableBastionFullAccessFromCidr
         
@@ -116,8 +106,8 @@ Resources:
     Properties:
       TemplateURL: './redshift.template'
       Parameters:
-        VpcId: !GetAtt Vpc.Outputs.VPCID
-        SubnetIds: !GetAtt Vpc.Outputs.PrivateSubnetIds
+        VpcId: !Ref VpcId
+        SubnetIds: !Join [',', !Ref PrivateSubnetIds]
         DatabaseName: !Ref RedshiftDatabaseName
         UsernameSecret: !GetAtt RedshiftSecrets.Outputs.Arn
         NumberOfNodes: 1
@@ -131,7 +121,7 @@ Resources:
       TemplateURL: './secret_pair.template'
       Parameters:
         Username: !Ref AuroraUsername
-        SecretName: '/databases/aurora/admin'
+        SecretName: !Sub "/databases/${AuroraDatabaseName}/admin"
 
   AuroraStack:
     Condition: CreateAurora
@@ -141,18 +131,55 @@ Resources:
       Parameters:
         DBName: !Ref AuroraDatabaseName
         UsernameSecret: !GetAtt AuroraSecrets.Outputs.Arn
-        VpcId: !GetAtt Vpc.Outputs.VPCID
-        SubnetIds: !Join
-          - ','
-          - - !GetAtt Vpc.Outputs.PrivateSubnet2AID
-            - !GetAtt Vpc.Outputs.PrivateSubnet2BID
-            - !GetAtt Vpc.Outputs.PrivateSubnet2CID
+        VpcId: !Ref VpcId
+        SubnetIds: !Join [',', !Ref PrivateSubnetIds]
         AccessCidr: !Ref VpcCidr
-        DBPort: 5432
+        
+  LegacyDatabaseSecrets:
+    Condition: CreateLegacyDatabase
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: './secret_pair.template'
+      Parameters:
+        Username: !Ref LegacyDatabaseUsername
+        SecretName: !Sub "/databases/${LegacyDatabaseName}/admin"
+
+  LegacyDatabaseStack:
+    Condition: CreateLegacyDatabase
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: './aurora.template'
+      Parameters:
+        DBName: !Ref LegacyDatabaseName
+        UsernameSecret: !GetAtt LegacyDatabaseSecrets.Outputs.Arn
+        VpcId: !Ref VpcId
+        SubnetIds: !Join [',', !Ref PrivateSubnetIds]
+        AccessCidr: !Ref VpcCidr
+
+  DMSStack:
+    Condition: CreateDMS
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: './dms.template'
+      Parameters:
+        VpcId: !Ref VpcId
+        AccessCidr: !Ref VpcCidr
+        TargetDatabasePort: !If [CreateAurora, 3306, !Ref AWS::NoValue]
+        SubnetIds: !Join [',', !Ref PrivateSubnetIds]
+        SourceDatabaseName: !Ref LegacyDatabaseName
+        SourceDatabaseEngine: aurora
+        SourceDatabaseUsername: !Join ['', ['{{resolve:secretsmanager:', !GetAtt LegacyDatabaseSecrets.Outputs.Arn, ':SecretString:username}}' ]]
+        SourceDatabasePassword: !Join ['', ['{{resolve:secretsmanager:', !GetAtt LegacyDatabaseSecrets.Outputs.Arn, ':SecretString:password}}' ]]
+        SourceDatabasePort: !GetAtt LegacyDatabaseStack.Outputs.Port
+        SourceDatabaseAddress: !GetAtt LegacyDatabaseStack.Outputs.ClusterEndpoint
+        TargetDatabaseName: !Ref AuroraDatabaseName
+        TargetDatabaseEngine: aurora
+        TargetDatabaseUsername: !Join ['', ['{{resolve:secretsmanager:', !GetAtt AuroraSecrets.Outputs.Arn, ':SecretString:username}}' ]]
+        TargetDatabasePassword: !Join ['', ['{{resolve:secretsmanager:', !GetAtt AuroraSecrets.Outputs.Arn, ':SecretString:password}}' ]]
+        TargetDatabasePort: !GetAtt AuroraStack.Outputs.Port
+        TargetDatabaseAddress: !GetAtt AuroraStack.Outputs.ClusterEndpoint
 
 Outputs:
-  VpcId:
-    Value: !Ref Vpc
   BastionAutoScalingGroup:
     Value: GetAtt PrivateBastion.Outputs.BastionAutoScalingGroup
     Description: |

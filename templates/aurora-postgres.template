@@ -33,6 +33,43 @@ Parameters:
     MinValue: 1115
     MaxValue: 65535
     
+  DBEngineVersion:
+    Description: Select Database Engine Version
+    Type: String
+    Default: 9.6.8
+    AllowedValues:
+      - 9.6.8
+      - 9.6.9
+      - 9.6.11
+      - 9.6.12
+      - 10.4
+      - 10.5
+      - 10.6
+      - 10.7
+     
+  DBInstanceClass:
+    Default: db.r4.large
+    Description: Database Instance Class. db.r5 instance classes are supported for Aurora PostgreSQL 10.6 or later. db.t3.medium instance class is supported for Aurora PostgreSQL 10.7 or later.
+    Type: String
+    AllowedValues:
+    - db.t3.medium
+    - db.r4.large
+    - db.r4.xlarge
+    - db.r4.2xlarge
+    - db.r4.4xlarge
+    - db.r4.8xlarge
+    - db.r4.16xlarge
+    - db.r5.large
+    - db.r5.xlarge
+    - db.r5.2xlarge
+    - db.r5.4xlarge
+    - db.r5.12xlarge
+    - db.r5.24xlarge
+
+###########################################################################
+# Mandatory tags that will be added to all resources that support tags
+###########################################################################
+  
 
   EnvironmentStage:
     Type: String
@@ -62,6 +99,8 @@ Metadata:
         Parameters:
           - DBName
           - DBPort
+          - DBInstanceClass
+          - DBEngineVersion
       -
         Label:
           default: Networking
@@ -69,16 +108,43 @@ Metadata:
           - VpcId
           
 ###############################################################################
+# Mappings
+###############################################################################
+ 
+Mappings: 
+  DBFamilyMap: 
+    "9.6.8": 
+      "family": "aurora-postgresql9.6"
+    "9.6.9": 
+      "family": "aurora-postgresql9.6"
+    "9.6.11": 
+      "family": "aurora-postgresql9.6"
+    "9.6.12": 
+      "family": "aurora-postgresql9.6"
+    "10.4":
+      "family": "aurora-postgresql10"
+    "10.5":
+      "family": "aurora-postgresql10"
+    "10.6":
+      "family": "aurora-postgresql10"
+    "10.7":
+      "family": "aurora-postgresql10"
+
+      
+###############################################################################
 # Conditions
 ############################################################################### 
 Conditions:
   IsProd: !Equals [!Ref EnvironmentStage, 'prod']
   IsReplica: !Or [!Equals [!Ref EnvironmentStage, 'pre-prod'], Condition: IsProd]
+  DoEnableIAM: !Not [!Equals [!Ref DBEngineVersion, '9.6.8']]
+  
+  
 
 ###############################################################################
-# Resources
-############################################################################### 
-
+# Resources 
+###############################################################################   
+    
 Resources:
 
   MonitoringIAMRole: 
@@ -126,6 +192,37 @@ Resources:
       SourceSecurityGroupId: !Ref ClusterSecurityGroup
       Description: 'Self Reference'        
       
+  RDSDBClusterParameterGroup:
+    Type: AWS::RDS::DBClusterParameterGroup
+    Properties:
+      Description: !Join [ "- ", [ "Aurora PG Cluster Parameter Group for  Cloudformation Stack ", !Ref DBName ] ]
+      Family: !FindInMap [DBFamilyMap, !Ref DBEngineVersion, "family"] 
+      Parameters:
+        rds.force_ssl: 1
+        
+  DBParamGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: !Join [ "- ", [ "Aurora PG Database Instance Parameter Group for Cloudformation Stack ", !Ref DBName ] ]
+      Family: !FindInMap [DBFamilyMap, !Ref DBEngineVersion, "family"] 
+      Parameters:
+        shared_preload_libraries: auto_explain,pg_stat_statements,pg_hint_plan,pgaudit
+        log_statement: "ddl"
+        log_connections: 1
+        log_disconnections: 1
+        log_lock_waits: 1
+        log_min_duration_statement: 5000
+        auto_explain.log_min_duration: 5000
+        auto_explain.log_verbose: 1
+        log_rotation_age: 1440
+        log_rotation_size: 102400
+        rds.log_retention_period: 10080
+        random_page_cost: 1
+        track_activity_query_size: 16384
+        idle_in_transaction_session_timeout: 7200000
+        statement_timeout: 7200000
+        search_path: '"$user",public'
+
   AuroraKMSCMK:
     Type: 'AWS::KMS::Key'
     DeletionPolicy: Retain
@@ -168,22 +265,73 @@ Resources:
     DeletionPolicy: Snapshot
     UpdateReplacePolicy: Snapshot
     Properties:
-      Engine: aurora
-      EngineMode: serverless
+      Engine: aurora-postgresql
+      EngineMode: provisioned
+      EngineVersion: !Ref DBEngineVersion
       DatabaseName: !Ref DBName
+      Port: !Ref DBPort
       MasterUsername: !Join ['', ['{{resolve:secretsmanager:', !Ref UsernameSecret, ':SecretString:username}}' ]]
       MasterUserPassword: !Join ['', ['{{resolve:secretsmanager:', !Ref UsernameSecret, ':SecretString:password}}' ]]
       DBSubnetGroupName: !Ref DBSubnetGroup
       VpcSecurityGroupIds:
       - !Ref ClusterSecurityGroup  
       BackupRetentionPeriod: !If [IsProd, 35, 7]
+      DBClusterParameterGroupName: !Ref RDSDBClusterParameterGroup
       StorageEncrypted:  true
       KmsKeyId: !Ref AuroraKMSCMK
+      EnableIAMDatabaseAuthentication: !If [DoEnableIAM, true, !Ref "AWS::NoValue"]
       Tags:
         -
           Key: EnvironmentStage
           Value: !Ref EnvironmentStage
         
+  AuroraDBFirstInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      CopyTagsToSnapshot: true  
+      DBInstanceClass:
+        Ref: DBInstanceClass
+      DBClusterIdentifier: !Ref AuroraDBCluster  
+      Engine: aurora-postgresql
+      EngineVersion: !Ref DBEngineVersion
+      DBParameterGroupName:
+        Ref: DBParamGroup
+      MonitoringInterval: !If [IsProd, 1, 0]
+      MonitoringRoleArn: !If [IsProd, !GetAtt MonitoringIAMRole.Arn, !Ref "AWS::NoValue"]
+      AutoMinorVersionUpgrade: !If [IsProd, 'false', 'true']
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      PubliclyAccessible: false
+      EnablePerformanceInsights: true
+      PerformanceInsightsKMSKeyId: !Ref AuroraKMSCMK
+      PerformanceInsightsRetentionPeriod: !If [IsProd, 731, 7]
+      Tags:
+        -
+          Key: EnvironmentStage
+          Value: !Ref EnvironmentStage
+
+  AuroraDBSecondInstance:
+    Condition: IsReplica
+    Type: AWS::RDS::DBInstance
+    DependsOn: 
+      - AuroraDBFirstInstance
+    Properties:
+      CopyTagsToSnapshot: true  
+      DBInstanceClass:
+        Ref: DBInstanceClass
+      DBClusterIdentifier: !Ref AuroraDBCluster  
+      Engine: aurora-postgresql
+      EngineVersion: !Ref DBEngineVersion
+      DBParameterGroupName:
+        Ref: DBParamGroup
+      MonitoringInterval: !If [IsProd, 1, 0]
+      MonitoringRoleArn: !If [IsProd, !GetAtt MonitoringIAMRole.Arn, !Ref "AWS::NoValue"]
+      AutoMinorVersionUpgrade: !If [IsProd, 'false', 'true']
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      PubliclyAccessible: false
+      EnablePerformanceInsights: true
+      PerformanceInsightsKMSKeyId: !Ref AuroraKMSCMK
+      PerformanceInsightsRetentionPeriod: !If [IsProd, 731, 7]
+          
   SecretRDSInstanceAttachment:
     Type: "AWS::SecretsManager::SecretTargetAttachment"
     Properties:
@@ -198,6 +346,9 @@ Outputs:
   ClusterEndpoint:
     Description: 'Aurora Cluster/Writer Endpoint'
     Value: !GetAtt 'AuroraDBCluster.Endpoint.Address'
+  ReaderEndpoint:
+    Description: 'Aurora Reader Endpoint'
+    Value: !GetAtt 'AuroraDBCluster.ReadEndpoint.Address'
   Port:
     Description: 'Aurora Endpoint Port'
     Value: !GetAtt 'AuroraDBCluster.Endpoint.Port'

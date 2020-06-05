@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  SourceDatabaseName:
+    Type: String
+    Default: ""
+  SourceDatabaseEngine:
+    Type: String
+    Default: ""
+  SourceDatabaseUsername:
+    Type: String
+    Default: ""
+    NoEcho: true
+  SourceDatabasePassword:
+    Type: String
+    Default: ""
+    NoEcho: true
+  SourceDatabasePort:
+    Type: String
+    Default: ""
+  SourceDatabaseAddress:
+    Type: String
+    Default: ""
+  TargetDatabaseName:
+    Type: String
+    Default: ""
+  TargetDatabaseEngine:
+    Type: String
+    Default: ""
+  TargetDatabaseUsername:
+    Type: String
+    Default: ""
+  TargetDatabasePassword:
+    Type: String
+    Default: ""
+  TargetDatabasePort:
+    Type: String
+    Default: ""
+  TargetDatabaseAddress:
+    Type: String
+    Default: ""
+
+Conditions:
+  enableSource: !And
+    - !Not [!Equals [!Ref SourceDatabaseName, ""]]
+    - !Not [!Equals [!Ref SourceDatabaseEngine, ""]]
+    - !Not [!Equals [!Ref SourceDatabaseUsername, ""]]
+    - !Not [!Equals [!Ref SourceDatabasePassword, ""]]
+    - !Not [!Equals [!Ref SourceDatabasePort, ""]]
+    - !Not [!Equals [!Ref SourceDatabaseAddress, ""]]
+  enableTarget: !And
+    - !Not [!Equals [!Ref TargetDatabaseName, ""]]
+    - !Not [!Equals [!Ref TargetDatabaseEngine, ""]]
+    - !Not [!Equals [!Ref TargetDatabaseUsername, ""]]
+    - !Not [!Equals [!Ref TargetDatabasePassword, ""]]
+    - !Not [!Equals [!Ref TargetDatabasePort, ""]]
+    - !Not [!Equals [!Ref TargetDatabaseAddress, ""]]
+  enableReplication: !And
+    - !Condition enableSource
+    - !Condition enableTarget
+Resources:
+ DMSSourceEndpoint:
+    Type: "AWS::DMS::Endpoint" 
+    Condition: enableSource
+    Properties:
+      DatabaseName: !Ref SourceDatabaseName
+      EndpointType: source
+      EngineName: !Ref SourceDatabaseEngine
+      Username: !Ref SourceDatabaseUsername
+      Password: !Ref SourceDatabasePassword
+      Port: !Ref SourceDatabasePort
+      ServerName: !Ref SourceDatabaseAddress
+
+  DMSTargetEndpoint:
+    Condition: enableTarget
+    Type: "AWS::DMS::Endpoint" 
+    Properties:
+      DatabaseName: !Ref TargetDatabaseName
+      EndpointType: target
+      EngineName: !Ref TargetDatabaseEngine
+      Username: !Ref TargetDatabaseUsername
+      Password: !Ref TargetDatabasePassword
+      Port: !Ref TargetDatabasePort
+      ServerName: !Ref TargetDatabaseAddress
+  
+  DMSReplicationTask:
+    Type: "AWS::DMS::ReplicationTask" 
+    Condition: enableReplication
+    Properties:
+      MigrationType: full-load-and-cdc
+      ReplicationInstanceArn: !Ref DMSReplicationInstance
+      SourceEndpointArn: !Ref DMSSourceEndpoint
+      TargetEndpointArn: !Ref DMSTargetEndpoint
+      TableMappings: "{ \"rules\": [
+                { \"rule-type\": \"selection\", \"rule-id\": \"1\", \"rule-name\": \"1\",
+                \"object-locator\": { \"schema-name\": \"%\", \"table-name\": \"%\" },
+                \"rule-action\": \"include\" } ] }"  
+  
+          

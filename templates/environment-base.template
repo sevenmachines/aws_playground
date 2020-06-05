@@ -1,0 +1,51 @@
+Parameters:
+  VpcCidr:
+    Type: String
+
+Resources:
+  Vpc:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: './vpc.template'
+      Parameters:
+        VPCCIDR: !Ref VpcCidr
+        NumberOfAZs: 3
+        AvailabilityZones: !Join
+          - ','
+          - - !Select [0, !GetAZs ""]
+            - !Select [1, !GetAZs ""]
+            - !Select [2, !GetAZs ""]
+        CreatePrivateSubnets: true
+        CreateAdditionalPrivateSubnets: false
+        
+        PublicSubnet1CIDR: !Select [0, !Cidr [!Ref VpcCidr, 12, 8]]
+        PublicSubnet2CIDR: !Select [1, !Cidr [!Ref VpcCidr, 12, 8]]
+        PublicSubnet3CIDR: !Select [2, !Cidr [!Ref VpcCidr, 12, 8]]
+        PublicSubnet4CIDR: !Select [3, !Cidr [!Ref VpcCidr, 12, 8]]
+        PrivateSubnet1ACIDR: !Select [4, !Cidr [!Ref VpcCidr, 12, 8]]
+        PrivateSubnet2ACIDR: !Select [5, !Cidr [!Ref VpcCidr, 12, 8]]
+        PrivateSubnet3ACIDR: !Select [6, !Cidr [!Ref VpcCidr, 12, 8]]
+        PrivateSubnet4ACIDR: !Select [7, !Cidr [!Ref VpcCidr, 12, 8]]
+        PrivateSubnet1BCIDR: !Select [8, !Cidr [!Ref VpcCidr, 12, 8]]
+        PrivateSubnet2BCIDR: !Select [9, !Cidr [!Ref VpcCidr, 12, 8]]
+        PrivateSubnet3BCIDR: !Select [10, !Cidr [!Ref VpcCidr, 12, 8]]
+        PrivateSubnet4BCIDR: !Select [11, !Cidr [!Ref VpcCidr, 12, 8]]
+
+Outputs:
+  VpcId:
+    Value: !GetAtt Vpc.Outputs.VPCID 
+  VpcCidr:
+    Value: !GetAtt Vpc.Outputs.VPCCIDR
+  PublicSubnetIds:
+    Value: !Join
+        - ','
+        - - !GetAtt Vpc.Outputs.PublicSubnet1ID
+          - !GetAtt Vpc.Outputs.PublicSubnet2ID
+          - !GetAtt Vpc.Outputs.PublicSubnet3ID
+  PrivateSubnetIds:
+    Value: !Join
+        - ','
+        - - !GetAtt Vpc.Outputs.PrivateSubnet1AID
+          - !GetAtt Vpc.Outputs.PrivateSubnet2AID
+          - !GetAtt Vpc.Outputs.PrivateSubnet3AID
+  

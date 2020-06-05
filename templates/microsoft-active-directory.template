@@ -33,7 +33,6 @@ Resources:
       EnableSso: !Ref EnableSSO
       Name: !Ref FQDN
       Password: !Join ['', ['{{resolve:secretsmanager:', !GetAtt ADSecret.Outputs.Arn, ':SecretString:password}}' ]]
-      ShortName: String
       VpcSettings: 
         VpcId: !Ref VpcId
         SubnetIds: !Ref SubnetIds
