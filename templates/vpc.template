@@ -303,6 +303,9 @@ Parameters:
     Default: default
     Description: The allowed tenancy of instances launched into the VPC
     Type: String
+  DomainName:
+    Default: ""
+    Type: String
 Conditions:
   3AZCondition: !Or
     - !Equals
@@ -376,14 +379,15 @@ Conditions:
     - !Equals
       - !Ref 'PublicSubnetTag3'
       - ''
+  UseDomainName: !Not [!Equals [!Ref DomainName, ""]]
 Resources:
   DHCPOptions:
     Type: AWS::EC2::DHCPOptions
     Properties:
       DomainName: !If
-        - NVirginiaRegionCondition
-        - ec2.internal
-        - !Sub '${AWS::Region}.compute.internal'
+        - UseDomainName
+        - !Ref DomainName
+        - !Ref AWS::NoValue
       DomainNameServers:
         - AmazonProvidedDNS
   VPC:
@@ -1484,6 +1488,32 @@ Resources:
           - !Ref 'AWS::NoValue'
       ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
       VpcId: !Ref 'VPC'
+  StorageGatewayEndpoint:
+    Condition: PrivateSubnetsCondition
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PrivateDnsEnabled: true
+      VpcEndpointType: Interface  
+      SubnetIds: [!Ref PrivateSubnet1A, !Ref PrivateSubnet2A, !Ref PrivateSubnet3A]
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.storagegateway'
+      VpcId: !Ref 'VPC'
+
+  PrivateZoneSecurityGroup:
+    Condition: PrivateSubnetsCondition
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enables full access across private zone
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - CidrIp: !Ref 'PrivateSubnet1ACIDR'
+          Description: Cross zone access 1A
+          IpProtocol: -1
+        - CidrIp: !Ref 'PrivateSubnet2ACIDR'
+          Description: Cross zone access 2A
+          IpProtocol: -1
+        - CidrIp: !Ref 'PrivateSubnet3ACIDR'
+          Description: Cross zone access 3A
+          IpProtocol: -1
 Outputs:
   NAT1EIP:
     Condition: PrivateSubnetsCondition
@@ -1649,12 +1679,25 @@ Outputs:
     Value: !Ref 'PublicSubnet4'
     Export:
       Name: !Sub '${AWS::StackName}-PublicSubnet4ID'
-  S3VPCEndpoint:
+  S3Endpoint:
     Condition: PrivateSubnetsCondition
     Description: S3 VPC Endpoint
     Value: !Ref 'S3VPCEndpoint'
     Export:
-      Name: !Sub '${AWS::StackName}-S3VPCEndpoint'
+      Name: !Sub '${AWS::StackName}-S3Endpoint'
+  StorageGatewayEndpoint:
+    Condition: PrivateSubnetsCondition
+    Description: Storage gateway Endpoint
+    Value: !Ref 'StorageGatewayEndpoint'
+    Export:
+      Name: !Sub '${AWS::StackName}-StorageGatewayEndpoint'
+  StorageGatewayEndpointDNS:
+    Description: Storage gateway endpoint DNS
+    Value: !Join [',', !GetAtt StorageGatewayEndpoint.DnsEntries]
+  StorageGatewayEndpointNetworkInterfaceIds:
+    Description: Storage gateway endpoint network interface ids
+    Value: !Join [',', !GetAtt StorageGatewayEndpoint.NetworkInterfaceIds]
+  
   PrivateSubnet1ARouteTable:
     Condition: PrivateSubnetsCondition
     Value: !Ref 'PrivateSubnet1ARouteTable'
@@ -1718,3 +1761,6 @@ Outputs:
     Description: VPC ID
     Export:
       Name: !Sub '${AWS::StackName}-VPCID'
+  PrivateZoneSecurityGroup:
+    Value: !Ref PrivateZoneSecurityGroup
+    Description: Private zone secufty group id

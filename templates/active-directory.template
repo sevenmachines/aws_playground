@@ -7,14 +7,16 @@ Parameters:
     Type: String
     AllowedValues: [true, false]
     Default: false
-  FQDN:
+  DomainName:
     Type: String
     Description: The FQDN of the directory
-    Default: corp.example.internal
+    Default: ""
   VpcId:
     Type: AWS::EC2::VPC::Id
   SubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
+Conditions:
+  UseDomainName: !Not [!Equals [!Ref DomainName, ""]]
 
 Resources:
   ADSecret:
@@ -31,7 +33,10 @@ Resources:
       CreateAlias: false
       Edition: !Ref Edition
       EnableSso: !Ref EnableSSO
-      Name: !Ref FQDN
+      Name: !If
+        - UseDomainName
+        - !Ref DomainName
+        - !Sub 'directory.${AWS::Region}.compute.internal'
       Password: !Join ['', ['{{resolve:secretsmanager:', !GetAtt ADSecret.Outputs.Arn, ':SecretString:password}}' ]]
       VpcSettings: 
         VpcId: !Ref VpcId

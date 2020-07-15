@@ -1,4 +1,7 @@
 Parameters:
+  DomainName:
+    Type: String
+    Default: ""
   VpcId:
     Type: AWS::EC2::VPC::Id
   PublicSubnetIds:
@@ -7,6 +10,10 @@ Parameters:
     Type: List<AWS::EC2::Subnet::Id>
   VpcCidr:
     Type: String
+  EnableActiveDirectory:
+    Type: String
+    AllowedValues:  ['true', 'false']
+    Default: false
   EnableBastionAccess:
     Type: String
     AllowedValues:  ['true', 'false']
@@ -20,51 +27,22 @@ Parameters:
   TransitGatewayId:
     Type: String
     Default: ''
-  EnableAurora:
-    Type: String
-    AllowedValues:  ['true', 'false']
-    Default: 'false'
-  AuroraDatabaseName:
-    Type: String
-  AuroraUsername:
-    NoEcho: true
-    Type: String
-  EnableLegacyDatabase:
-    Type: String
-    AllowedValues:  ['true', 'false']
-    Default: 'false'
-  LegacyDatabaseName:
-    Type: String
-  LegacyDatabaseUsername:
-    NoEcho: true
-    Type: String
-  EnableRedshift:
-    Type: String
-    AllowedValues:  ['true', 'false']
-    Default: 'false'
   EnableNetworking:
     Type: String
     AllowedValues:  [true, false]
     Default: false
-  RedshiftDatabaseName:
+  EnableEndpoints:
     Type: String
-  RedshiftUsername:
-    NoEcho: true
-    Type: String
-  EnableDMS:
-    Type: String
-    AllowedValues:  ['true', 'false']
-    Default: 'false'
+    AllowedValues:  [true, false]
+    Default: false
 
 Conditions:
   CreateBastion: !Equals [!Ref EnableBastionAccess, 'true']
   CreateNetworking: !Equals [!Ref EnableNetworking, 'true']
-  CreateAurora: !Equals [!Ref EnableAurora, 'true']
-  CreateLegacyDatabase: !Equals [!Ref EnableLegacyDatabase, 'true']
-  CreateDMS: !Equals [!Ref EnableDMS, 'true']
-  CreateRedshift: !Equals [!Ref EnableRedshift, 'true']
+  CreateActiveDirectory: !Equals [!Ref EnableActiveDirectory, 'true']
+  CreateEndpoints: !Equals [!Ref EnableEndpoints, 'true']
   IsBastionPublic: !Equals [!Ref EnablePublicBastion, true]
-
+  UseDomainName: !Not [!Equals [!Ref DomainName, ""]]
 Resources:
 
   NetworkStack:
@@ -76,6 +54,15 @@ Resources:
         VpcId: !Ref VpcId
         TransitGatewayId: !Ref TransitGatewayId
         SubnetIds: !Ref PublicSubnetIds
+ 
+  Endpoints:
+    Condition: CreateEndpoints
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: './endpoints.template'
+      Parameters:
+        VpcId: !Ref VpcId
+        SubnetIds: !Join [',', !Ref PrivateSubnetIds]
  
   PrivateBastion:
     Condition: CreateBastion
@@ -91,94 +78,21 @@ Resources:
         EnablePublicAccess: !Ref EnablePublicBastion
         EnableFullAccessFromCidr: !Ref EnableBastionFullAccessFromCidr
         
-  RedshiftSecrets:
-    Condition: CreateRedshift
+  ActiveDirectoryStack:
+    Condition: CreateActiveDirectory
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: './secret_pair.template'
-      Parameters:
-        Username: !Ref RedshiftUsername
-        SecretName: '/databases/redshift/admin'
-
-  RedshiftStack:
-    Condition: CreateRedshift
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      TemplateURL: './redshift.template'
+      TemplateURL: './active-directory.template'
       Parameters:
         VpcId: !Ref VpcId
-        SubnetIds: !Join [',', !Ref PrivateSubnetIds]
-        DatabaseName: !Ref RedshiftDatabaseName
-        UsernameSecret: !GetAtt RedshiftSecrets.Outputs.Arn
-        NumberOfNodes: 1
-        PubliclyAccessible: 'false'
-        RedshiftInboundCIDR: !Ref VpcCidr
-
-  AuroraSecrets:
-    Condition: CreateAurora
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      TemplateURL: './secret_pair.template'
-      Parameters:
-        Username: !Ref AuroraUsername
-        SecretName: !Sub "/databases/${AuroraDatabaseName}/admin"
-
-  AuroraStack:
-    Condition: CreateAurora
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      TemplateURL: './aurora.template'
-      Parameters:
-        DBName: !Ref AuroraDatabaseName
-        UsernameSecret: !GetAtt AuroraSecrets.Outputs.Arn
-        VpcId: !Ref VpcId
-        SubnetIds: !Join [',', !Ref PrivateSubnetIds]
-        AccessCidr: !Ref VpcCidr
-        
-  LegacyDatabaseSecrets:
-    Condition: CreateLegacyDatabase
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      TemplateURL: './secret_pair.template'
-      Parameters:
-        Username: !Ref LegacyDatabaseUsername
-        SecretName: !Sub "/databases/${LegacyDatabaseName}/admin"
-
-  LegacyDatabaseStack:
-    Condition: CreateLegacyDatabase
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      TemplateURL: './aurora.template'
-      Parameters:
-        DBName: !Ref LegacyDatabaseName
-        UsernameSecret: !GetAtt LegacyDatabaseSecrets.Outputs.Arn
-        VpcId: !Ref VpcId
-        SubnetIds: !Join [',', !Ref PrivateSubnetIds]
-        AccessCidr: !Ref VpcCidr
-
-  DMSStack:
-    Condition: CreateDMS
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      TemplateURL: './dms.template'
-      Parameters:
-        VpcId: !Ref VpcId
-        AccessCidr: !Ref VpcCidr
-        TargetDatabasePort: !If [CreateAurora, 3306, !Ref AWS::NoValue]
-        SubnetIds: !Join [',', !Ref PrivateSubnetIds]
-        SourceDatabaseName: !Ref LegacyDatabaseName
-        SourceDatabaseEngine: aurora
-        SourceDatabaseUsername: !Join ['', ['{{resolve:secretsmanager:', !GetAtt LegacyDatabaseSecrets.Outputs.Arn, ':SecretString:username}}' ]]
-        SourceDatabasePassword: !Join ['', ['{{resolve:secretsmanager:', !GetAtt LegacyDatabaseSecrets.Outputs.Arn, ':SecretString:password}}' ]]
-        SourceDatabasePort: !GetAtt LegacyDatabaseStack.Outputs.Port
-        SourceDatabaseAddress: !GetAtt LegacyDatabaseStack.Outputs.ClusterEndpoint
-        TargetDatabaseName: !Ref AuroraDatabaseName
-        TargetDatabaseEngine: aurora
-        TargetDatabaseUsername: !Join ['', ['{{resolve:secretsmanager:', !GetAtt AuroraSecrets.Outputs.Arn, ':SecretString:username}}' ]]
-        TargetDatabasePassword: !Join ['', ['{{resolve:secretsmanager:', !GetAtt AuroraSecrets.Outputs.Arn, ':SecretString:password}}' ]]
-        TargetDatabasePort: !GetAtt AuroraStack.Outputs.Port
-        TargetDatabaseAddress: !GetAtt AuroraStack.Outputs.ClusterEndpoint
-
+        DomainName: !If
+        - UseDomainName
+        - !Ref DomainName
+        - !Ref AWS::NoValue
+        SubnetIds: !Join
+          -  ','
+          - - !Select [0, !Ref PrivateSubnetIds]
+            - !Select [1, !Ref PrivateSubnetIds]
 Outputs:
   BastionAutoScalingGroup:
     Value: GetAtt PrivateBastion.Outputs.BastionAutoScalingGroup

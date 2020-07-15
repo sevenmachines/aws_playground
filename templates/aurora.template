@@ -201,19 +201,19 @@ Outputs:
   Port:
     Description: 'Aurora Endpoint Port'
     Value: !GetAtt 'AuroraDBCluster.Endpoint.Port'
-  DBName:
+  DatabaseName:
     Description: 'Database Name'
     Value: !Ref DBName
-  PSQLCommandLine:    
-    Description: PSQL Command Line
+  DatabaseSecurityGroup:
+    Value: !Ref ClusterSecurityGroup
+  JDBCConnectionString:
+    Description: JDBC connection string for the master database
     Value: !Join
-             - ''
-             - - 'psql --host='
-               - !GetAtt 'AuroraDBCluster.Endpoint.Address' 
-               - ' --port='
-               - !GetAtt 'AuroraDBCluster.Endpoint.Port'
-               - ' --username='
-               - !Join ['', ['{{resolve:secretsmanager:', !Ref UsernameSecret, ':SecretString:username}}' ]]
-               - ' --dbname='
-               - !Ref DBName
+      - ''
+      - - 'jdbc:mysql://'
+        - !GetAtt AuroraDBCluster.Endpoint.Address
+        - ':'
+        - !GetAtt AuroraDBCluster.Endpoint.Port
+        - '/'
+        - !Ref DBName
     

@@ -11,33 +11,35 @@ Parameters:
     Type: List<AWS::EC2::SecurityGroup::Id>
     Description: Security groups that can access the endpoint
 
-  RouteTableIds:
-    Description: The route tables to update
-    Type: CommaDelimitedList
-
-  EnableSSMEndpoints:
+  EnableSSMEndpoint:
     Type: String
     Description: Enable a private vpc endpoint for systems manager
     AllowedValues: [true, false]
     Default: false
-  EnableEC2Endpoints:
+  EnableEC2Endpoint:
     Type: String
     Description: Enable a private vpc endpoint for systems manager
     AllowedValues: [true, false]
     Default: false
-  EnableS3Endpoints:
+  EnableS3Endpoint:
+    Type: String
+    Description: Enable a private vpc endpoint for systems manager
+    AllowedValues: [true, false]
+    Default: false
+  EnableStorageGatewayEndpoint:
     Type: String
     Description: Enable a private vpc endpoint for systems manager
     AllowedValues: [true, false]
     Default: false
  
 Conditions:
-  SSMEndpointsEnabled: !Equals [!Ref EnableSSMEndpoints, true]
-  EC2EndpointsEnabled: !Equals [!Ref EnableEC2Endpoints, true]
-  S3EndpointsEnabled: !Equals [!Ref EnableS3Endpoints, true]
-  CreateSSMEndpoints: !Condition SSMEndpointsEnabled
-  CreateEC2Endpoints: !Or [!Condition EC2EndpointsEnabled, !Condition CreateSSMEndpoints]
-  CreateS3Endpoints: !Or [!Condition S3EndpointsEnabled, !Condition CreateSSMEndpoints]
+  SSMEndpointEnabled: !Equals [!Ref EnableSSMEndpoint, true]
+  EC2EndpointEnabled: !Equals [!Ref EnableEC2Endpoint, true]
+  S3EndpointEnabled: !Equals [!Ref EnableS3Endpoint, true]
+  StorageGatewayEndpointEnabled: !Equals [!Ref EnableStorageGatewayEndpoint, true]
+  CreateSSMEndpoint: !Condition SSMEndpointEnabled
+  CreateEC2Endpoint: !Or [!Condition EC2EndpointEnabled, !Condition CreateSSMEndpoint]
+  CreateS3Endpoint: !Or [!Condition S3EndpointEnabled, !Condition CreateSSMEndpoint]
 
 Resources:
 #PolicyDocument: '{
@@ -50,8 +52,8 @@ Resources:
 #     }]
 #  }'
  
-  S3PrivateEndpoint:
-    Condition: CreateS3Endpoints
+  S3Endpoint:
+    Condition: CreateS3Endpoint
     Type: AWS::EC2::VPCEndpoint
     Properties: 
       PrivateDnsEnabled: true
@@ -59,8 +61,8 @@ Resources:
       VpcEndpointType: Gateway
       VpcId: !Ref VpcId
 
-  SystemsManagerPrivateEndpoint:
-    Condition: CreateSSMEndpoints
+  SystemsManagerEndpoint:
+    Condition: CreateSSMEndpoint
     Type: AWS::EC2::VPCEndpoint
     Properties: 
       PrivateDnsEnabled: true
@@ -69,8 +71,8 @@ Resources:
       SubnetIds: !Ref SubnetIds
       VpcEndpointType: Interface
       VpcId: !Ref VpcId
-  SystemsManagerMessagesPrivateEndpoint:
-    Condition: CreateSSMEndpoints
+  SystemsManagerMessagesEndpoint:
+    Condition: CreateSSMEndpoint
     Type: AWS::EC2::VPCEndpoint
     Properties: 
       PrivateDnsEnabled: true
@@ -79,8 +81,8 @@ Resources:
       SubnetIds: !Ref SubnetIds
       VpcEndpointType: Interface
       VpcId: !Ref VpcId
-  EC2PrivateEndpoint:
-    Condition: CreateEC2Endpoints
+  EC2Endpoint:
+    Condition: CreateEC2Endpoint
     Type: AWS::EC2::VPCEndpoint
     Properties: 
       PrivateDnsEnabled: true
@@ -89,8 +91,8 @@ Resources:
       SubnetIds: !Ref SubnetIds
       VpcEndpointType: Interface
       VpcId: !Ref VpcId
-  EC2MessagesPrivateEndpoint:
-    Condition: CreateEC2Endpoints
+  EC2MessagesEndpoint:
+    Condition: CreateEC2Endpoint
     Type: AWS::EC2::VPCEndpoint
     Properties: 
       PrivateDnsEnabled: true
@@ -100,3 +102,27 @@ Resources:
       VpcEndpointType: Interface
       VpcId: !Ref VpcId
       
+  StorageGatewayEndpoint:
+    Condition: PrivateSubnetsCondition
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcEndpointType: Interface  
+      SubnetIds: !Ref SubnetIds
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.storagegateway'
+      VpcId: !Ref VpcId
+ 
+Outputs:
+  S3Endpoint:
+    Description: S3 VPC Endpoint
+    Value: !Ref 'S3VPCEndpoint'
+    Export:
+      Name: !Sub '${AWS::StackName}-S3Endpoint'
+  StorageGatewayEndpoint:
+    Description: Storage gateway Endpoint
+    Value: !Ref StorageGatewayEndpoint
+  StorageGatewayEndpointDNS:
+    Description: Storage gateway endpoint DNS
+    Value: !GetAtt StorageGatewayEndpoint.DnsEntries
+  StorageGatewayEndpointNetworkInterfaceIds:
+    Description: Storage gateway endpoint network interface ids
+    Value: !GetAtt StorageGatewayEndpoint.NetworkInterfaceIds

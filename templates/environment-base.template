@@ -1,6 +1,9 @@
 Parameters:
   VpcCidr:
     Type: String
+  DomainName:
+    Type: String
+    Default: ""
 
 Resources:
   Vpc:
@@ -9,6 +12,7 @@ Resources:
       TemplateURL: './vpc.template'
       Parameters:
         VPCCIDR: !Ref VpcCidr
+        DomainName: !Ref DomainName
         NumberOfAZs: 3
         AvailabilityZones: !Join
           - ','
