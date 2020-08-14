@@ -51,7 +51,7 @@ aws cloudformation package  \
   --s3-bucket ${S3_BUCKET} \
   --output-template-file  ${TMP_DIR}/${TEMPLATE}
 
-echo aws cloudformation deploy \
+aws cloudformation deploy \
   --template-file ${TMP_DIR}/${TEMPLATE} \
   --s3-bucket ${S3_BUCKET} \
   --capabilities CAPABILITY_NAMED_IAM CAPABILITY_IAM \
